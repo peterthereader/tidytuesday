@@ -1,0 +1,160 @@
+---
+title: "Tidy Tuesday, 2021-07-13, Scooby Doo"
+author: "Peter Boss"
+date: "7/12/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Original data is TT 2021 week 29: https://github.com/rfordatascience/tidytuesday/tree/master/data/2021/2021-07-13  
+
+
+
+```{r}
+library(lubridate)
+library(tidytuesdayR)
+library(tidyverse)
+
+```
+
+
+
+```{r}
+# tuesdata <- tidytuesdayR::tt_load('2021-07-13')
+# tuesdata <- tidytuesdayR::tt_load(2021, week = 29)
+# 
+# scoobydoo <- tuesdata$scoobydoo
+
+# Or read in the data manually
+
+scoobydoo <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-07-13/scoobydoo.csv')
+
+```
+
+
+Goal: Find who made the most catches, graph it  
+
+Assumptions: Every main character is present in each episode, and has an equal chance of catching the culprit.  To this end, I'm treating NULL like NA and getting rid of them.  
+
+
+Wrangling  
+
+```{r}
+g <- scoobydoo %>% 
+  # lubridate::year
+  # decade just uses modulo arithmetic to "round" down
+  mutate(year = year(date_aired), decade = (year - (year %% 10))) %>% 
+  # choose cols by pattern  
+  select(year, decade, starts_with("caught")) %>%
+  # caught_char_name (5 cols) stored as chr, so change them to lgl (logical)
+  mutate(across(where(is.character), as.logical)) %>%
+  mutate(across(where(is.logical), as.integer)) %>% 
+  group_by(decade) %>% 
+  # for some reason, omitting "na.rm = T" omits a ton of values
+  summarise(daphnie = sum(caught_daphnie, na.rm = T),
+            fred = sum(caught_fred, na.rm = T),
+            scooby = sum(caught_scooby, na.rm = T),
+            shaggy = sum(caught_shaggy, na.rm = T),
+            velma = sum(caught_velma, na.rm = T),
+            other = sum(caught_other, na.rm = T),
+            escaped = sum(caught_not, na.rm = T)) %>% 
+  pivot_longer(cols = -1,  # this means "not col 1, but yes to the rest"
+               names_to = "person",
+               values_to = "n") %>% 
+  # capitalize the names
+  mutate(person = str_to_title(person))
+
+```
+
+
+
+Plot  
+
+```{r}
+# declare the specific colors
+# colors taken from @nrennie35  
+scooby_colors = c("#7867ae", "#000000", "#009edb", "#888888", "#ae6e0c", "#b0ba1b", "#f7971c")
+
+# # look at the colors
+# # trick taken from @allisonkoh_
+# pie(rep(1, length(scooby_colors)), col = scooby_colors)
+
+g %>% 
+  # add an "s" to the decades, so it looks better
+  mutate(decade = paste(decade, "s", sep = "")) %>% 
+  ggplot(aes(x = person, y = n, fill = person)) +
+  geom_bar(stat = "identity") + 
+  coord_flip() +
+  labs(title = "Scooby Doo, who captured the most culprits in each decade",
+       caption = "Source: kaggle and ScoobyPedia | TidyTuesday 2021, week 29 | viz: @peter_thereader") +
+  # this is how it splits into multiple charts
+  facet_wrap(~decade) +
+  xlab("") + ylab("") +
+  # add the specific colors
+  scale_fill_manual(values = scooby_colors)
+
+ggsave("tidy_tues_20210713_scooby_captures.png")
+
+```
+
+
+
+
+
+
+```{r}
+# make a vector of the observations to keep
+keep <- scoobydoo %>% 
+  # subset for the index and all the caught fields
+  select(index, caught_fred, caught_daphnie, caught_velma, caught_shaggy, caught_scooby, caught_other, caught_not) %>% 
+  # caught_character are stored as chr; caught_other and caught_not are logical
+  # this line pushes the chr vars to logical; it also coerces NULL to NA
+  mutate(across(where(is.character), as.logical)) %>% 
+  # drop the stuff we don't want
+  drop_na() %>% 
+  # return just the index
+  select(index)
+
+
+# filter the main list to just those observations
+scoobydoo %>% 
+  filter(index %in% keep[[1]]) %>% 
+  select(date_aired, starts_with("caught")) %>%
+  print
+
+```
+
+
+
+
+
+```{r}
+scoobydoo %>% 
+  # lubridate::year
+  # decade is just uses modulo arithmetic to "round" down
+  mutate(year = year(date_aired), decade = (year - (year %% 10))) %>% 
+  # choose cols by pattern  
+  select(index, decade, starts_with("caught")) %>%
+  # caught_char_name (5 cols) stored as chr, so change them to lgl (logical)
+  mutate(across(where(is.character), as.logical)) %>%
+  # change all 7 lgl cols from TF to 0/1
+  mutate(across(where(is.logical), as.integer)) %>%
+  pivot_longer(
+    cols = starts_with("caught"),
+    names_to = c("catcher"),
+    values_to = "value"
+  ) %>% 
+  mutate(catcher = str_replace_all(catcher, "caught_", "")) %>% 
+  # mutate(catcher = unlist(TC(catcher))) %>% 
+  filter(value != FALSE)
+  print
+
+```
+
+
+
+
